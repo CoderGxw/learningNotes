@@ -12,8 +12,17 @@
     - [创建订阅（Subscribe）](#%e5%88%9b%e5%bb%ba%e8%ae%a2%e9%98%85subscribe)
     - [简单的同步调用应用举例](#%e7%ae%80%e5%8d%95%e7%9a%84%e5%90%8c%e6%ad%a5%e8%b0%83%e7%94%a8%e5%ba%94%e7%94%a8%e4%b8%be%e4%be%8b)
   - [异步调用](#%e5%bc%82%e6%ad%a5%e8%b0%83%e7%94%a8)
-    - [线程控制-Scheduler](#%e7%ba%bf%e7%a8%8b%e6%8e%a7%e5%88%b6-scheduler)
+    - [线程控制：Scheduler （一）](#%e7%ba%bf%e7%a8%8b%e6%8e%a7%e5%88%b6scheduler-%e4%b8%80)
+      - [API：Schedulers.immediate()、Schedulers.newThread()、Schedulers.computation()、Schedulers.computation()、AndroidSchedulers.mainThread()](#apischedulersimmediateschedulersnewthreadschedulerscomputationschedulerscomputationandroidschedulersmainthread)
+      - [生产者和消费者线程（subscribeOn/observeOn）](#%e7%94%9f%e4%ba%a7%e8%80%85%e5%92%8c%e6%b6%88%e8%b4%b9%e8%80%85%e7%ba%bf%e7%a8%8bsubscribeonobserveon)
     - [事件序列变换](#%e4%ba%8b%e4%bb%b6%e5%ba%8f%e5%88%97%e5%8f%98%e6%8d%a2)
+      - [常用API：map()、flatMap()、throttleFirst()](#%e5%b8%b8%e7%94%a8apimapflatmapthrottlefirst)
+      - [变换的原理：lift()](#%e5%8f%98%e6%8d%a2%e7%9a%84%e5%8e%9f%e7%90%86lift)
+    - [对Observable整体的变换(compose)](#%e5%af%b9observable%e6%95%b4%e4%bd%93%e7%9a%84%e5%8f%98%e6%8d%a2compose)
+    - [线程控制：Scheduler (二)](#%e7%ba%bf%e7%a8%8b%e6%8e%a7%e5%88%b6scheduler-%e4%ba%8c)
+      - [使用observeOn()多次切换线程](#%e4%bd%bf%e7%94%a8observeon%e5%a4%9a%e6%ac%a1%e5%88%87%e6%8d%a2%e7%ba%bf%e7%a8%8b)
+  - [RxJava 的适用场景和使用方式](#rxjava-%e7%9a%84%e9%80%82%e7%94%a8%e5%9c%ba%e6%99%af%e5%92%8c%e4%bd%bf%e7%94%a8%e6%96%b9%e5%bc%8f)
+    - [与 Retrofit 的结合](#%e4%b8%8e-retrofit-%e7%9a%84%e7%bb%93%e5%90%88)
 
 ## 定义
 
@@ -197,8 +206,10 @@ observable.subscribe(onNextAction, onErrorAction, onCompletedAction);
 
 ## 异步调用
 
-### 线程控制-Scheduler
+### 线程控制：Scheduler （一）
 在不指定线程的情况下， RxJava 遵循的是线程不变的原则，即：在哪个线程调用 subscribe()，就在哪个线程生产事件；在哪个线程生产事件，就在哪个线程消费事件。如果需要切换线程，就需要用到 Scheduler （调度器）。<br>
+
+#### API：Schedulers.immediate()、Schedulers.newThread()、Schedulers.computation()、Schedulers.computation()、AndroidSchedulers.mainThread()
 在RxJava 中，**Scheduler** 调度器，相当于线程控制器，RxJava 通过它来指定每一段代码应该运行在什么样的线程。RxJava 已经内置了几个 Scheduler ，它们已经适合大多数的使用场景：
 - **Schedulers.immediate():** 直接在当前线程运行，相当于不指定线程。这是默认的 Scheduler。
 - **Schedulers.newThread():** 总是启用新线程，并在新线程执行操作。
@@ -206,6 +217,7 @@ observable.subscribe(onNextAction, onErrorAction, onCompletedAction);
 - **Schedulers.computation():** 计算所使用的 Scheduler。这个计算指的是 CPU 密集型计算，即不会被 I/O 等操作限制性能的操作，例如图形的计算。这个 Scheduler 使用的固定的线程池，大小为 CPU 核数。不要把 I/O 操作放在 computation() 中，否则 I/O 操作的等待时间会浪费 CPU。
 - **AndroidSchedulers.mainThread():** Android专用的线程，指的是在Android的UI线程（主线程）中运行。
 
+#### 生产者和消费者线程（subscribeOn/observeOn）
 有了这几个 Scheduler ，就可以使用 subscribeOn() 和 observeOn() 两个方法来对线程进行控制了。
 * **subscribeOn()**: 指定 subscribe() 所发生的线程，即 Observable.OnSubscribe 被激活时所处的线程。或者叫做事件产生的线程。
 * **observeOn()**: 指定 Subscriber 所运行在的线程。或者叫做事件消费的线程。<br>
@@ -237,6 +249,9 @@ Observable.create(new OnSubscribe<Drawable>() {
 ```
 ### 事件序列变换
 >将事件序列中的对象或整个序列进行加工处理，转换成不同的事件或事件序列。
+
+#### 常用API：map()、flatMap()、throttleFirst()
+
 - **map()**：将事件对象进行直接变换。<br>
   ![变换方法map](image/变换方法map.png)
   下面例子使用map()方法通过创建了一个返回值的Func1类，修改了从目标对象到观察者之间传递的参数内容,将String转换成了Bitmap。<br>
@@ -318,3 +333,186 @@ Observable.from(students).flatMap(new Func1<Student, Observable<Course>>() {
 3. 每一个创建出来的 **Observable** 发送的事件，都被汇入同一个 **Observable** ，而这个 **Observable** 负责将这些事件统一交给 **Subscriber** 的回调方法。<br>
    
 这三个步骤，把事件拆成了两级，通过一组新创建的 **Observable** 将初始的对象『铺平』之后通过统一路径分发了下去。而这个『铺平』就是 **flatMap()** 所谓的 **flat。**
+![变换方法flatmap](image/变换方法flatmap.png)
+
+由于可以在嵌套的 Observable 中添加异步代码， flatMap() 也常用于嵌套的异步操作，例如嵌套的网络请求。示例代码（Retrofit + RxJava）：
+```java
+networkClient.token() // 返回 Observable<String>，在订阅时请求 token，并在响应后发送 token    
+.flatMap(new Func1<String, Observable<Messages>>() {        
+    @Override        
+        public Observable<Messages> call(String token) {// 返回 Observable<Messages>，在订阅时请求消息列表，并在响应后发送请求到的消息列表            
+        return networkClient.messages();        
+        }    
+    })    
+    .subscribe(new Action1<Messages>() {        
+        @Override        
+        public void call(Messages messages) {            // 处理显示消息列表   
+                 showMessages(messages);        
+                 }    
+    });
+```
+
+- **throttleFirst()**: 在每次事件触发后的一定时间间隔内丢弃新的事件。例如防止手抖进行双击打开两个相同的界面等。
+  ```java
+  RxView.clickEvents(button) // RxBinding 代码
+  .throttleFirst(500, TimeUnit.MILLISECONDS) // 设置防抖间隔为 500ms
+  .subscribe(subscriber);
+  ```
+
+#### 变换的原理：lift()
+
+变换的原理总结来说就是**针对事件序列的处理和再发送**。
+在 RxJava 的内部，它们是基于同一个基础的变换方法： **lift(Operator)**。首先看一下 lift() 的内部实现（仅核心代码）：
+```java
+// 注意：这不是 lift() 的源码，而是将源码中与性能、兼容性、扩展性有关的代码剔除后的核心代码。// 如果需要看源码，可以去 RxJava 的 GitHub 仓库下载。
+public <R> Observable<R> lift(Operator<? extends R, ? super T> operator) {    
+    return Observable.create(new OnSubscribe<R>() {        
+        @Override        
+        public void call(Subscriber subscriber) {            
+            Subscriber newSubscriber = operator.call(subscriber);                       
+            newSubscriber.onStart();  
+            onSubscribe.call(newSubscriber);        
+            }    
+            });
+}
+```
+当含有 lift() 时： 
+1. lift() 创建了一个 Observable 后，加上之前的原始 Observable，已经有两个 Observable 了； 
+2. 而同样地，新 Observable 里的新 OnSubscribe 加上之前的原始 Observable 中的原始 OnSubscribe，也就有了两个 OnSubscribe； 
+3. 当用户调用经过 lift() 后的 Observable 的 subscribe() 的时候，使用的是 lift() 所返回的新的 Observable ，于是它所触发的 onSubscribe.call(subscriber)，也是用的新 Observable 中的新 OnSubscribe，即在 lift() 中生成的那个 OnSubscribe； 
+4. 而这个新 OnSubscribe 的 call() 方法中的 onSubscribe ，就是指的原始 Observable 中的原始 OnSubscribe ，在这个 call() 方法里，新 OnSubscribe 利用 operator.call(subscriber) 生成了一个新的 Subscriber（Operator 就是在这里，通过自己的 call() 方法将新 Subscriber 和原始 Subscriber 进行关联，并插入自己的『变换』代码以实现变换），然后利用这个新 Subscriber 向原始 Observable 进行订阅。 
+这样就实现了 lift() 过程，有点像一种**代理机制，通过事件拦截和处理实现事件序列的变换**。
+
+在 Observable 执行了 lift(Operator) 方法之后，会返回一个新的 Observable，这个新的 Observable 会像一个代理一样，负责接收原始的 Observable 发出的事件，并在处理后发送给 Subscriber。<br>
+
+图解变换原理lift():
+![变换原理lift方法](image/变换原理lift方法.png)<br>
+变换原理lift()动图:
+![变换原理lift动图](image/变换原理lift动图.png)<br>
+多重lift():
+![lift多次变换](image/lift多次变换.png)<br>
+
+>RxJava 不建议开发者自定义 Operator 来直接使用 lift()，而是建议尽量使用已有的 lift() 包装方法（如 map() flatMap() 等）进行组合来实现需求，因为直接使用 lift() 非常容易发生一些难以发现的错误。
+
+### 对Observable整体的变换(compose)
+
+除了 lift() 之外， Observable 还有一个变换方法叫做 compose(Transformer)。它和 lift() 的区别在于， lift() 是针对事件项和事件序列的，而 compose() 是针对 Observable 自身进行变换。
+假设在程序中有多个 Observable ，并且他们都需要应用一组相同的 lift() 变换。你可以这么写：
+```java
+private Observable liftAll(Observable observable) {    
+    return observable.lift1()
+    .lift2()
+    .lift3()
+    .lift4();
+    }
+    ...
+    liftAll(observable1).subscribe(subscriber1);
+    liftAll(observable2).subscribe(subscriber2);
+    liftAll(observable3).subscribe(subscriber3);
+    liftAll(observable4).subscribe(subscriber4);
+```
+
+当使用Transformer时，代码可以如下写：
+```java
+public class LiftAllTransformer implements Observable.Transformer<Integer, String> {    
+    @Override    
+    public Observable<String> call(Observable<Integer> observable) {  
+              return observable.lift1().lift2().lift3().lift4();    
+        }
+    }
+    ...
+    Transformer liftAll = new LiftAllTransformer();
+    observable1.compose(liftAll).subscribe(subscriber1);
+    observable2.compose(liftAll).subscribe(subscriber2);
+    observable3.compose(liftAll).subscribe(subscriber3);
+    observable4.compose(liftAll).subscribe(subscriber4);
+```
+### 线程控制：Scheduler (二)
+
+#### 使用observeOn()多次切换线程
+ 使用subscribeOn() 结合 observeOn() 来实现线程控制，让事件的产生和消费发生在不同的线程。在结合了map()等变换方法之后，可以多次的切换线程。
+ 准确的说，observeOn() 指定的是它之后的操作所在的线程。因此如果有多次切换线程的需求，只要在每个想要切换线程的位置调用一次 observeOn() 即可
+ ```java
+ Observable.just(1, 2, 3, 4) // IO 线程，由 subscribeOn() 指定    
+ .subscribeOn(Schedulers.io())    
+ .observeOn(Schedulers.newThread())    
+ .map(mapOperator) // 新线程，由 observeOn() 指定    
+ .observeOn(Schedulers.io())    
+ .map(mapOperator2) // IO 线程，由 observeOn() 指定    
+ .observeOn(AndroidSchedulers.mainThread)     
+ .subscribe(subscriber);  // Android 主线程，由 observeOn() 指定
+ ```
+需要注意，不同于 observeOn() ，可以多次切换线程。subscribeOn() 的位置放在哪里都可以，但它是只能调用一次的。
+
+## RxJava 的适用场景和使用方式
+
+### 与 Retrofit 的结合
+Retrofit 把请求封装进 Observable ，在请求结束后调用 onNext() 或在请求失败后调用 onError()<br>
+请求封装进 Observable：
+```java
+@GET("/user")public Observable<User> getUser(@Query("userId") String userId);
+```
+请求调用结束后，调用观察者的方法：
+```java
+getUser(userId)    
+.observeOn(AndroidSchedulers.mainThread())    
+.subscribe(new Observer<User>() {        
+    @Override        
+    public void onNext(User user) {            
+        userView.setUser(user);        
+    }        
+    @Override        
+    public void onCompleted() {        }        
+    @Override        
+    public void onError(Throwable error) {            
+        // Error handling            ...        
+        }    
+    });
+```
+当请求到User之后，还要与数据库进行修正时,因为数据库的操作很重，一次读写操作花费 10~20ms 是很常见的，这样的耗时很容易造成界面的卡顿。所以通常情况下，如果可以的话一定要避免在主线程中处理数据库：
+```java
+getUser(userId)    
+.doOnNext(new Action1<User>() {        
+    @Override        
+    public void call(User user) {            
+        processUser(user);        
+        })    
+        .observeOn(AndroidSchedulers.mainThread())    
+        .subscribe(new Observer<User>() {        
+            @Override        
+            public void onNext(User user) {            
+                userView.setUser(user);        
+                }        
+            @Override        
+            public void onCompleted() {        }        
+            @Override        public void onError(Throwable error) {            
+                // Error handling            ...        
+            }    });
+```
+假设 /user 接口并不能直接访问，而需要填入一个在线获取的 token ，代码应该怎么写？
+```java
+@GET("/token")public Observable<String> getToken();
+@GET("/user")public Observable<User> getUser(@Query("token") String token, @Query("userId") String userId);
+...
+getToken()    
+.flatMap(new Func1<String, Observable<User>>() {        
+    @Override        
+    public Observable<User> onNext(String token) {            
+        return getUser(token, userId);        
+    })    
+.observeOn(AndroidSchedulers.mainThread())    
+.subscribe(new Observer<User>() {        
+    @Override        
+    public void onNext(User user) {            
+        userView.setUser(user);        
+        }        
+    @Override        
+    public void onCompleted() {        }        
+    @Override        
+    public void onError(Throwable error) {            
+        // Error handling            ...        
+    }    
+});
+
+```
+
