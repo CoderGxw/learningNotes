@@ -13,6 +13,7 @@
     - [简单的同步调用应用举例](#%e7%ae%80%e5%8d%95%e7%9a%84%e5%90%8c%e6%ad%a5%e8%b0%83%e7%94%a8%e5%ba%94%e7%94%a8%e4%b8%be%e4%be%8b)
   - [异步调用](#%e5%bc%82%e6%ad%a5%e8%b0%83%e7%94%a8)
     - [线程控制-Scheduler](#%e7%ba%bf%e7%a8%8b%e6%8e%a7%e5%88%b6-scheduler)
+    - [事件序列变换](#%e4%ba%8b%e4%bb%b6%e5%ba%8f%e5%88%97%e5%8f%98%e6%8d%a2)
 
 ## 定义
 
@@ -207,4 +208,113 @@ observable.subscribe(onNextAction, onErrorAction, onCompletedAction);
 
 有了这几个 Scheduler ，就可以使用 subscribeOn() 和 observeOn() 两个方法来对线程进行控制了。
 * **subscribeOn()**: 指定 subscribe() 所发生的线程，即 Observable.OnSubscribe 被激活时所处的线程。或者叫做事件产生的线程。
-* **observeOn()**: 指定 Subscriber 所运行在的线程。或者叫做事件消费的线程。
+* **observeOn()**: 指定 Subscriber 所运行在的线程。或者叫做事件消费的线程。<br>
+
+举个例子:在android中，当需要取出一些图片，并显示在页面上时，可以将加载图片的操作放在io线程中，将图片显示的操作放在主线程中。这意味着加载图片耗费了几十甚至几百毫秒的时间，也不会造成丝毫界面的卡顿。
+```java
+int drawableRes = ...;
+ImageView imageView = ...;
+Observable.create(new OnSubscribe<Drawable>() {    
+    @Override    
+    public void call(Subscriber<? super Drawable> subscriber) {        
+        Drawable drawable = getTheme().getDrawable(drawableRes));        subscriber.onNext(drawable);        
+        subscriber.onCompleted();    }
+        })
+        .subscribeOn(Schedulers.io()) // 指定 subscribe() 发生在 IO 线程
+        .observeOn(AndroidSchedulers.mainThread()) // 指定 Subscriber 的回调发生在主线程
+        .subscribe(new Observer<Drawable>() {    
+            @Override    
+            public void onNext(Drawable drawable) {        
+                imageView.setImageDrawable(drawable);    
+            }    
+            @Override    
+            public void onCompleted() {    }    
+            @Override    
+            public void onError(Throwable e) {        
+                Toast.makeText(activity, "Error!", Toast.LENGTH_SHORT).show();    
+            }
+        });
+```
+### 事件序列变换
+>将事件序列中的对象或整个序列进行加工处理，转换成不同的事件或事件序列。
+- **map()**：将事件对象进行直接变换。<br>
+  ![变换方法map](image/变换方法map.png)
+  下面例子使用map()方法通过创建了一个返回值的Func1类，修改了从目标对象到观察者之间传递的参数内容,将String转换成了Bitmap。<br>
+```java
+Observable.just("images/logo.png") // 输入类型 String    
+            .map(new Func1<String, Bitmap>() {        
+                @Override        
+                public Bitmap call(String filePath) { // 参数类型 String            
+                return getBitmapFromPath(filePath); // 返回类型 Bitmap        
+                }    
+            })    
+            .subscribe(new Action1<Bitmap>() {        
+                @Override        
+                public void call(Bitmap bitmap) { // 参数类型 Bitmap            
+                showBitmap(bitmap);        
+            }    
+    });
+```
+这里出现了一个叫做 **Func1** 的类。它和 **Action1** 非常相似，也是 RxJava 的一个接口，用于包装含有一个参数的方法。 **Func1** 和 **Action** 的区别在于， **Func1** 包装的是有返回值的方法。另外，和 **ActionX** 一样， **FuncX** 也有多个，用于不同参数个数的方法。**FuncX** 和 **ActionX** 的区别在 **FuncX** 包装的是有返回值的方法。
+- **flatmap()**:这是一个很有用但非常难理解的变换，因此我决定花多些篇幅来介绍它。首先假设这么一种需求：假设有一个数据结构『学生』，现在需要打印出一组学生的名字。实现方式很简单
+```java
+Student[] students = ...;
+Subscriber<String> subscriber = new Subscriber<String>() {    
+    @Override    
+    public void onNext(String name) {        
+        Log.d(tag, name);    
+        }    
+        ...
+    };
+Observable.from(students)    
+        .map(new Func1<Student, String>() {        
+            @Override        
+            public String call(Student student) {            
+                return student.getName();        
+                }    
+            })    
+        .subscribe(subscriber);
+```
+那么再假设：如果要打印出每个学生所需要修的所有课程的名称呢？（需求的区别在于，每个学生只有一个名字，但却有多个课程。）首先可以这样实现：
+```java
+Student[] students = ...;
+Subscriber<Student> subscriber = new Subscriber<Student>() {    
+    @Override    
+    public void onNext(Student student) {       
+         List<Course> courses = student.getCourses();        
+         for (int i = 0; i < courses.size(); i++) {            
+             Course course = courses.get(i);            
+             Log.d(tag, course.getName());        
+        }    
+    }    
+    ...
+    };
+    Observable.from(students).subscribe(subscriber);
+```
+那么如果我不想在 Subscriber 中使用 for 循环，而是希望 Subscriber 中直接传入单个的 Course 对象呢（这对于代码复用很重要）？用 **map()** 显然是不行的，因为 **map()** 是一对一的转化，而我现在的要求是一对多的转化。那怎么才能把一个 Student 转化成多个 Course 呢？
+
+这个时候，就需要用 **flatMap()** 了：
+```java
+Student[] students = ...;
+Subscriber<Course> subscriber = new Subscriber<Course>() {    
+    @Override    
+    public void onNext(Course course) {        
+        Log.d(tag, course.getName());    
+        }    
+        ...
+};
+Observable.from(students).flatMap(new Func1<Student, Observable<Course>>() {  
+          @Override        
+          public Observable<Course> call(Student student) {            
+            return Observable.from(student.getCourses());        
+            }    
+})    
+.subscribe(subscriber);
+
+```
+**flatMap()** 中返回的是个 **Observable** 对象，并且这个 **Observable** 对象并不是被直接发送到了 **Subscriber** 的回调方法中。 **flatMap()** 的原理是这样的：
+1. 使用传入的事件对象创建一个 **Observable** 对象；
+2. 并不发送这个 **Observable**, 而是将它激活，于是它开始发送事件；
+3. 每一个创建出来的 **Observable** 发送的事件，都被汇入同一个 **Observable** ，而这个 **Observable** 负责将这些事件统一交给 **Subscriber** 的回调方法。<br>
+   
+这三个步骤，把事件拆成了两级，通过一组新创建的 **Observable** 将初始的对象『铺平』之后通过统一路径分发了下去。而这个『铺平』就是 **flatMap()** 所谓的 **flat。**
